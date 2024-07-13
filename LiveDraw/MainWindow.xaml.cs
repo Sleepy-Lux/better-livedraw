@@ -4,12 +4,14 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Ink;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
@@ -40,6 +42,20 @@ namespace AntFu7.LiveDraw
         private static readonly Duration Duration7 = (Duration)Application.Current.Resources["Duration7"];
         private static readonly Duration Duration10 = (Duration)Application.Current.Resources["Duration10"];
 
+        [DllImport("kernel32.dll")]
+        static extern uint GetLastError();
+        [DllImport("user32.dll")]
+        private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+        [DllImport("user32.dll")]
+        private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+        [DllImport("user32.dll")]
+        static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        private IntPtr windowHandle;
+        private HwndSource source;
+
         /*#region Mouse Throught
 
         private const int WsExTransparent = 0x20;
@@ -65,9 +81,9 @@ namespace AntFu7.LiveDraw
         #endregion*/
 
         #region /---------Lifetime---------/
-
         public MainWindow()
         {
+
 
             if (mutex.WaitOne(TimeSpan.Zero, true))
             {
@@ -98,10 +114,20 @@ namespace AntFu7.LiveDraw
             }
         }
 
+        protected override void OnContentRendered(EventArgs e)
+        {
+            base.OnContentRendered(e);
+
+            SetupHotkeys();
+        }
+
         private void Exit(object sender, EventArgs e)
         {
             if (IsUnsaved())
                 QuickSave("ExitingAutoSave_");
+
+            source.RemoveHook(HwndHook);
+            UnregisterHotKey(windowHandle, 1200);
 
             Application.Current.Shutdown(0);
         }
@@ -802,6 +828,7 @@ namespace AntFu7.LiveDraw
         #endregion
 
         #region /--------- Shortcuts --------/
+
         private void Window_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.R)
@@ -862,6 +889,36 @@ namespace AntFu7.LiveDraw
                     break;
             }
         }
+        private void SetupHotkeys()
+        {
+
+            windowHandle = new WindowInteropHelper(this).Handle;
+            source = HwndSource.FromHwnd(windowHandle);
+            source.AddHook(HwndHook);
+
+            bool result = RegisterHotKey(windowHandle, 2320, 0x0001 | 0x0004, 0x5A); //Setting SHIFT+ALT+Z as focus key
+        }
+
+        private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            const int WM_HOTKEY = 0x0312;
+            switch (msg)
+            {
+                case WM_HOTKEY:
+                    switch (wParam.ToInt32())
+                    {
+                        case 2320:
+                            if (!_enable == true)
+                                SetForegroundWindow(hwnd);
+                            SetEnable(!_enable);
+                            handled = true;
+                            break;
+                    }
+                    break;
+            }
+            return IntPtr.Zero;
+        }
+
         #endregion
 
         #region /------ Line Mode -------/
